@@ -3,10 +3,10 @@ import csv
 import json
 import urllib3
 
-# -- Bypass urllib3 SSL Certificate Warnings ---
+# --- Bypass urllib3 SSL Certificate Warnings ---
 urllib3.disable_warnings()
 
-# -- FMG details -- 
+# --- FMG details --- 
 FMG_IP = "https://<FMG_IP>/jsonrpc"
 USERNAME = "<ADMIN>"
 PASSWORD = "<PASSWORD>"
