@@ -6,7 +6,7 @@ This Python script automates the retrieval of network interface settings from de
 
 * **Session Management**: Handles JSON-RPC login and logout sequences, maintaining a persistent session ID for all calls.
 * **Global Inventory**: Automatically iterates through all devices within a specified Administrative Domain (ADOM).
-* **Config Extraction**: Pulls data directly from the Policy Manager (`pm`) configuration database for accurate reporting.
+* **Config Extraction**: Pulls data directly from configuration database for accurate reporting.
 * **CSV Output**: Formats data for easy import into Excel, Power BI, or other auditing tools.
 
 ## Workflow
