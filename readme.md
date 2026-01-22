@@ -1,4 +1,4 @@
-# Fetch FortiGate interface details from FortiManager using Python and JSON API
+# Fetch FortiGate Interfaces via FortiManager API and Python
 
 This Python script automates the retrieval of network interface settings from devices managed by FortiManager. Using the Fortinet JSON-RPC API, it gathers hostnames, interface names, IP addresses, and DHCP statuses, exporting the results into a structured CSV file.
 
