@@ -12,7 +12,7 @@ USER = "FMG Admin"
 PASS = "Admin Pass"
 URL = f"https://{HOST}/jsonrpc"
 
-# ADOMs to skip (Mirroring Postman Collection logic)
+# ADOMs to skip
 UPGRADE_IGNORE = {
     "rootp", "Unmanaged_Devices", "Syslog", "FortiClient", "FortiProxy",
     "FortiSandbox", "FortiAuthenticator", "FortiCache", "FortiDDoS",
