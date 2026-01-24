@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Configuration ---
-HOST = "FMG IP"
-USER = "FMG Admin"
-PASS = "Admin Pass"
+HOST = "XXX.XXX.XXX.XXX"  # Enter your FortiManager IP here
+USER = "admin"            # Enter your API/Admin username
+PASS = "YOUR_PASSWORD"    # Enter your password
 URL = f"https://{HOST}/jsonrpc"
 
 # ADOMs to skip
