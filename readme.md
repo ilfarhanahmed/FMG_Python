@@ -1,46 +1,40 @@
-# Fetch FortiGate Interfaces via FortiManager API and Python
+# FMG_Python: FortiManager Automation Toolkit
 
-This Python script automates the retrieval of network interface settings from devices managed by FortiManager. Using the Fortinet JSON-RPC API, it gathers hostnames, interface names, IP addresses, and DHCP statuses, exporting the results into a structured CSV file.
+Welcome to **FMG_Python**! This is a personal project dedicated to mastering the **Python** programming language while building practical automation solutions for **Fortinet's FortiManager (FMG)**.
 
-## Features
+The primary goal of this repository is to transition manual FortiManager administrative tasks into efficient, code-driven workflows using the FMG JSON-RPC API.
 
-* **Session Management**: Handles JSON-RPC login and logout sequences, maintaining a persistent session ID for all calls.
-* **Global Inventory**: Automatically iterates through all devices within a specified Administrative Domain (ADOM).
-* **Config Extraction**: Pulls data directly from configuration database for accurate reporting.
-* **CSV Output**: Formats data for easy import into Excel, Power BI, or other auditing tools.
 
-## Workflow
 
-The script follows a standard API lifecycle:
-1. **POST `/sys/login/user`**: Authenticates and retrieves a session token.
-2. **GET `/dvmdb/adom/{ADOM}/device`**: Lists all managed devices.
-3. **GET `/pm/config/device/{name}/...`**: Queries the specific Policy Manager configuration for each device interface.
-4. **POST `/sys/logout`**: Gracefully terminates the session.
+## 🎯 Project Goals
 
-## Prerequisites
+* **Python Mastery**: Applying core Python concepts—such as REST APIs, JSON data structures, environment variables, and asynchronous task polling—to real-world networking scenarios.
+* **FMG Automation**: Solving complex administrative challenges, including ADOM lifecycle management, sequential version upgrades, and database diagnostics.
+* **Professional Workflow**: Implementing industry-standard development habits, such as credential masking and version control best practices.
 
-* **Python 3.6+**
-* **Requests Library**: 
+
+## 🚀 Future Roadmap
+
+This repository is a "living project" and will continue to grow as I expand my Python skills.
+
+
+## 🛠️ Setup & Installation
+
+1.  **Clone the Repo**:
     ```bash
-    pip install requests
+    git clone [https://github.com/ilfarhanahmed/FMG_Python.git](https://github.com/ilfarhanahmed/FMG_Python.git)
     ```
-* **FortiManager Access**: Ensure the API user has sufficient RPC permissions (Read-Only is enough for this script).
+2.  **Install Requirements**:
+    ```bash
+    pip install requests python-dotenv
+    ```
+3.  **Configure Environment**:
+    Create a `.env` file in the root directory and add your FMG details:
+    ```text
+    FMG_HOST=your_ip
+    FMG_USER=your_user
+    FMG_PASS=your_password
+    ```
 
-## Configuration
-
-Update the following variables in the script header:
-
-| Variable   | Description |
-| :---       | :--- |
-| `FMG_IP`   | The full URL to the JSON-RPC endpoint (e.g., `https://192.168.1.1/jsonrpc`). |
-| `USERNAME` | Your FortiManager administrative username. |
-| `PASSWORD` | Your FortiManager administrative password. |
-| `ADOM`     | The Administrative Domain to query (default is `root`). |
-
-## Usage
-
-1. Clone or download the script.
-2. Configure the credentials and IP settings.
-3. Execute the script:
-   ```bash
-   python get_interfaces.py
+---
+**Learning one script at a time.**
