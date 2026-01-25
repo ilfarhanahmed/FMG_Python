@@ -111,9 +111,9 @@ try:
             reason = "Ignored" if name in UPGRADE_IGNORE else "Up-to-date" if current_ver_str == target_ver else "Not FortiOS"
             print(f"[{now_iso()}] Skipping {name:<15} | Reason: {reason:<15} | Type: {raw_prods}")
 
-    # 4. UPGRADE GLOBAL DATABASE
-    print(f"[{now_iso()}] Checking Global Database (OID 10) upgrade...")
-    fmg_rpc("exec", "/pm/config/adom/10/_upgrade", session=session_id)
+    # 4. UPGRADE GLOBAL DATABASE - uncomment the lines below to upgrade Global ADOM (OID = 10).
+    # print(f"[{now_iso()}] Checking Global Database (OID 10) upgrade...")
+    # fmg_rpc("exec", "/pm/config/adom/10/_upgrade", session=session_id)
 
 finally:
     # 5. LOGOUT
