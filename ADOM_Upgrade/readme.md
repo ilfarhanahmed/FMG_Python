@@ -28,4 +28,4 @@ HOST = "XXX.XXX.XXX.XXX" # FMG IP
 USER = "admin"
 PASS = "your_password"
 
-On FMG admin user, make sure to have JSON-RPC permission set to READ.
+On FMG admin user, make sure to have JSON-RPC permission set to READ-WRITE.
