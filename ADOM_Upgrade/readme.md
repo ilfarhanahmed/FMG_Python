@@ -27,3 +27,5 @@ Clone the repository and update the placeholders in `adom_upgrade.py`:
 HOST = "XXX.XXX.XXX.XXX" # FMG IP
 USER = "admin"
 PASS = "your_password"
+
+On FMG admin user, make sure to have JSON-RPC permission set to READ.
