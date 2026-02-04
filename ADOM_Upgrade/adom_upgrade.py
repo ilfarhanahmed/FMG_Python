@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Configuration ---
-HOST = "XXX.XXX.XXX.XXX"  # Enter your FortiManager IP here
-USER = "admin"            # Enter your API/Admin username
-PASS = "YOUR_PASSWORD"    # Enter your password
+HOST = "10.128.210.118"
+USER = "admin"
+PASS = "fortinet"
 URL = f"https://{HOST}/jsonrpc"
 
 UPGRADABLE_ADOMS = {
@@ -92,11 +92,21 @@ try:
 
         cur_v = float(version_map[name]["prev"])
         if cur_v < target_v:
-            print(f"    >>> Upgrading Local '{name}' ({cur_v} -> {target_str})")
+            # Calculate the REAL next step for truthful console output
+            step_v = min(target_v, cur_v + 0.2)
+            step_str = f"{step_v:.1f}"
+
+            print(f"    >>> Upgrading Local '{name}' ({cur_v} -> {step_str})")
             up_exec = fmg_rpc("exec", f"/pm/config/adom/{oid}/_upgrade", session=session_id)
             wait_for_task(up_exec['result'][0]['data']['task'], session_id)
-            version_map[name]["curr"] = target_str
-            version_map[name]["upgraded"] = True
+            
+            # Re-query actual ADOM version after task completion
+            updated_info = fmg_rpc("get", f"/dvmdb/adom/{name}", session=session_id)
+            u_data = updated_info.get("result", [{}])[0].get("data", {})
+            real_v = f"{str(u_data.get('os_ver')).split('.')[0]}.{u_data.get('mr')}"
+            
+            version_map[name]["curr"] = real_v
+            version_map[name]["upgraded"] = True if float(real_v) > cur_v else False
 
     # --- PHASE 2: UPGRADE GLOBAL ---
     print("-" * 65)
@@ -110,12 +120,22 @@ try:
             all_ready = False
 
     if all_ready and float(g_ver_orig) < target_v:
-        print(f"[{now_iso()}] STEP 2: All upgradable local ADOMs are upgraded to {target_str}.")
-        print(f"[{now_iso()}] STEP 3: Now upgrading Global Database to {target_str}...")
+        # Calculate the REAL next step for truthful console output
+        g_step_v = min(target_v, float(g_ver_orig) + 0.2)
+        g_step_str = f"{g_step_v:.1f}"
+
+        print(f"[{now_iso()}] STEP 2: All upgradable local ADOMs are upgraded to verified milestone.")
+        print(f"[{now_iso()}] STEP 3: Now upgrading Global Database to {g_step_str}...")
         global_up = fmg_rpc("exec", "/pm/config/adom/10/_upgrade", session=session_id)
         wait_for_task(global_up['result'][0]['data']['task'], session_id)
-        version_map[global_data.get('name')]["curr"] = target_str
-        version_map[global_data.get('name')]["upgraded"] = True
+        
+        # Re-query actual Global version after task completion
+        updated_g = fmg_rpc("get", "/dvmdb/adom/rootp", session=session_id)
+        ug_data = updated_g.get("result", [{}])[0].get("data", {})
+        real_gv = f"{str(ug_data.get('os_ver')).split('.')[0]}.{ug_data.get('mr')}"
+        
+        version_map[global_data.get('name')]["curr"] = real_gv
+        version_map[global_data.get('name')]["upgraded"] = True if float(real_gv) > float(g_ver_orig) else False
     else:
         print(f"[{now_iso()}] GLOBAL UPGRADE: Skipped (Already at target or locals not ready).")
 
