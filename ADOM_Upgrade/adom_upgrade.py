@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Configuration ---
-HOST = "xxxxxxxxxxxx"
-USER = "xxxxxxxxx"
-PASS = "xxxxxxxxxx"
+HOST = "xxxxxxx"
+USER = "xxxxxxx"
+PASS = "xxxxxxxx"
 URL = f"https://{HOST}/jsonrpc"
 
 UPGRADABLE_ADOMS = {
@@ -44,11 +44,27 @@ def fmg_rpc(method, url, data=None, session=None, params_extra=None):
 
 def wait_for_task(task_id, session_id):
     while True:
+        # Get task details including history lines
         task_res = fmg_rpc("get", f"/task/task/{task_id}", session=session_id)
-        percent = task_res.get("result", [{}])[0].get("data", {}).get("percent", 0)
+        task_data = task_res.get("result", [{}])[0].get("data", {})
+        percent = task_data.get("percent", 0)
+
         print(f"    Task Progress: {percent}%", end='\r')
+
         if int(percent) >= 100:
             print()
+            # If the state is not 'done', or percent is 100 but no upgrade happened
+            # we check the logs for errors
+            if task_data.get("state") != "done":
+                history = task_data.get("line", [])
+                # Get the last meaningful detail from the logs
+                error_detail = "Unknown error"
+                for line in reversed(history):
+                    detail = line.get("detail", "")
+                    if detail:
+                        error_detail = detail
+                        break
+                print(f"    [!] TASK STATUS: {error_detail}")
             break
         time.sleep(2)
 
@@ -58,7 +74,6 @@ login_res = fmg_rpc("exec", "/sys/login/user", data={"user": USER, "passwd": PAS
 session_id = login_res.get("session")
 
 try:
-    # 0. Get Initial Info
     status_res = fmg_rpc("get", "/sys/status", session=session_id)
     fmg_ver = f"{status_res['result'][0]['data']['Major']}.{status_res['result'][0]['data']['Minor']}"
 
@@ -66,7 +81,10 @@ try:
     adoms = adom_res.get("result", [{}])[0].get("data", [])
 
     global_data = next(a for a in adoms if str(a.get('oid')) == "10")
-    g_ver_orig = f"{str(global_data.get('os_ver')).split('.')[0]}.{global_data.get('mr')}"
+    # Initial global version query
+    g_info = fmg_rpc("get", f"/dvmdb/adom/{global_data.get('name')}", session=session_id)
+    gd = g_info.get("result", [{}])[0].get("data", {})
+    g_ver_orig = f"{str(gd.get('os_ver')).split('.')[0]}.{gd.get('mr')}"
 
     print("=" * 65)
     print(f"FORTIMANAGER SYSTEM VERSION: {fmg_ver}")
@@ -76,7 +94,6 @@ try:
     target_v = min(float(fmg_ver), float(g_ver_orig) + 0.2)
     target_str = f"{target_v:.1f}"
 
-    # Track versions and upgrade status
     version_map = {}
     for a in adoms:
         v = f"{str(a.get('os_ver')).split('.')[0]}.{a.get('mr')}"
@@ -92,19 +109,18 @@ try:
 
         cur_v = float(version_map[name]["prev"])
         if cur_v < target_v:
-            # Calculate the REAL next step for truthful console output
             step_v = min(target_v, cur_v + 0.2)
             step_str = f"{step_v:.1f}"
 
             print(f"    >>> Upgrading Local '{name}' ({cur_v} -> {step_str})")
             up_exec = fmg_rpc("exec", f"/pm/config/adom/{oid}/_upgrade", session=session_id)
             wait_for_task(up_exec['result'][0]['data']['task'], session_id)
-            
+
             # Re-query actual ADOM version after task completion
             updated_info = fmg_rpc("get", f"/dvmdb/adom/{name}", session=session_id)
             u_data = updated_info.get("result", [{}])[0].get("data", {})
             real_v = f"{str(u_data.get('os_ver')).split('.')[0]}.{u_data.get('mr')}"
-            
+
             version_map[name]["curr"] = real_v
             version_map[name]["upgraded"] = True if float(real_v) > cur_v else False
 
@@ -120,20 +136,16 @@ try:
             all_ready = False
 
     if all_ready and float(g_ver_orig) < target_v:
-        # Calculate the REAL next step for truthful console output
         g_step_v = min(target_v, float(g_ver_orig) + 0.2)
         g_step_str = f"{g_step_v:.1f}"
-
-        print(f"[{now_iso()}] STEP 2: All upgradable local ADOMs are upgraded to verified milestone.")
         print(f"[{now_iso()}] STEP 3: Now upgrading Global Database to {g_step_str}...")
         global_up = fmg_rpc("exec", "/pm/config/adom/10/_upgrade", session=session_id)
         wait_for_task(global_up['result'][0]['data']['task'], session_id)
-        
-        # Re-query actual Global version after task completion
+
         updated_g = fmg_rpc("get", "/dvmdb/adom/rootp", session=session_id)
         ug_data = updated_g.get("result", [{}])[0].get("data", {})
         real_gv = f"{str(ug_data.get('os_ver')).split('.')[0]}.{ug_data.get('mr')}"
-        
+
         version_map[global_data.get('name')]["curr"] = real_gv
         version_map[global_data.get('name')]["upgraded"] = True if float(real_gv) > float(g_ver_orig) else False
     else:
@@ -161,23 +173,16 @@ try:
 
 
     for adom in sorted(adoms, key=sort_logic):
-        name = adom.get('name')
-        oid = str(adom.get('oid'))
-        raw_p = adom.get('restricted_prds')
-
+        name, oid, raw_p = adom.get('name'), str(adom.get('oid')), adom.get('restricted_prds')
         v_data = version_map[name]
-
-        # Determine Status
         if oid == "10":
             type_n = "Global Database"
-            status = "Upgraded" if v_data["upgraded"] else "Not Upgraded"
         elif raw_p in UPGRADABLE_ADOMS and name not in UPGRADE_IGNORE:
             type_n = UPGRADABLE_ADOMS[raw_p]
-            status = "Upgraded" if v_data["upgraded"] else "Not Upgraded"
         else:
             type_n = "Non-Upgradable/System"
-            status = "Ignored"
-
+        status = "Upgraded" if v_data["upgraded"] else (
+            "Ignored" if type_n == "Non-Upgradable/System" else "Not Upgraded")
         print(f"{name:<25} | {type_n:<25} | {v_data['prev']:<10} | {v_data['curr']:<10} | {status}")
     print("=" * 110)
 
