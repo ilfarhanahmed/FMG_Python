@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Configuration ---
-HOST = "10.128.210.118"
-USER = "admin"
-PASS = "fortinet"
+HOST = "xxxxxxxxxxxx"
+USER = "xxxxxxxxx"
+PASS = "xxxxxxxxxx"
 URL = f"https://{HOST}/jsonrpc"
 
 UPGRADABLE_ADOMS = {
