@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-HOST     = "10.128.210.118"
+HOST     = "FMG IP"
 ADMIN    = "admin"
-PASSWORD = "fortinet"
+PASSWORD = "admin password"
 BASE_URL = f"https://{HOST}"
 DEFAULT_ADOM_OID = 3   # Root ADOM
 
