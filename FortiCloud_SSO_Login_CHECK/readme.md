@@ -1,5 +1,8 @@
 # 🔐 FortiCloud SSO Login Checker
 
+For the vulnerability FG-IR-26-060 this is useful to get full picture of all FGTs.
+https://www.fortiguard.com/psirt/FG-IR-26-060
+
 A Python script that queries **FortiManager** to audit the `admin-forticloud-sso-login`
 setting across all managed FortiGate devices in a single bulk API call.
 
