@@ -5,6 +5,22 @@ A professional, interactive Python utility designed to automate the **Retrieve C
 - Postman Collection:
 https://www.postman.com/ilfarhanahmed/workspace/fortimanager-public/collection/30322334-1995591c-fd59-4911-8289-48b06a694306
 
+## Usage
+
+1.  **Run the script**:
+    ```bash
+    python config_retrieve_automation.py
+    ```
+
+2.  **Authentication**: Enter your FortiManager IP, Admin Username, and Password when prompted (make sure to enable json-rpc for the admin user in FMG).
+4.  **Select ADOM**: Choose the numerical index of the ADOM you wish to manage.
+5.  **Select Devices**: 
+    * Type `all` to retrieve config for every device in the list.
+    * Type `0,2` for specific indices.
+    * Type `0-5` for a range of devices.
+6.  **Monitor**: Watch the live progress bar. Once finished, a summary table will display the status of each device.
+
+
 ## Features
 
 * **Interactive ADOM Selection**: Automatically fetches and lists all available Administrative Domains (ADOMs) for the operator to choose from.
@@ -33,21 +49,6 @@ https://www.postman.com/ilfarhanahmed/workspace/fortimanager-public/collection/3
     ```bash
     pip install requests
     ```
-
-## Usage
-
-1.  **Run the script**:
-    ```bash
-    python config_retrieve_automation.py
-    ```
-
-2.  **Authentication**: Enter your FortiManager IP, Admin Username, and Password when prompted.
-3.  **Select ADOM**: Choose the numerical index of the ADOM you wish to manage.
-4.  **Select Devices**: 
-    * Type `all` to retrieve config for every device in the list.
-    * Type `0,2` for specific indices.
-    * Type `0-5` for a range of devices.
-5.  **Monitor**: Watch the live progress bar. Once finished, a summary table will display the status of each device.
 
 ## Technical Details
 
