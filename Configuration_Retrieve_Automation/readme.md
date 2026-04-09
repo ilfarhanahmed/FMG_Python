@@ -1,4 +1,4 @@
-# FortiManager Configuration Retrieval Automation
+# FortiManager Retrieve Configuration Automation
 
 A professional, interactive Python utility designed to automate the **Retrieve Config** process for FortiGate devices managed by FortiManager. This tool replaces manual Postman execution with a streamlined, terminal-based experience featuring real-time task monitoring.
 
