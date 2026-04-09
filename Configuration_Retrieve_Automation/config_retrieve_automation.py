@@ -1,3 +1,11 @@
+"""
+FortiManager Devices' Configuration Retriever
+Logs into FortiManager, lets you pick ADOM and device(s),
+then Retrieves config.
+
+by: Farhan Ahmed - www.farhan.ch
+"""
+
 import requests
 import json
 import time
