@@ -1,5 +1,5 @@
 """
-FortiManager Devices' Configuration Retriever
+FortiManager Devices' Retrieve Configuration
 Logs into FortiManager, lets you pick ADOM and device(s),
 then Retrieves config.
 
