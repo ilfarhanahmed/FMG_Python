@@ -88,7 +88,6 @@ def main():
                 adom_res = requests.post(base_url, json={"id": 2, "session": session, "method": "get", "verbose": 1, "params": [{"url": "/dvmdb/adom", "fields": ["name", "restricted_prds"]}]}, verify=False).json()
                 raw_data = adom_res['result'][0].get('data', [])
 
-                # Product mapping for integer IDs
                 prd_map = {1: "fos", 16: "fpx", 3: "foc", 5: "ffw", 6: "fwc"}
                 allowed_products = ["fos", "foc", "ffw", "fwc", "fpx"]
                 filtered_adoms = []
@@ -135,7 +134,6 @@ def main():
             for i, dev in enumerate(devices):
                 print(f"  [{Colors.CYAN}{i}{Colors.END}] {dev['name']:<30} ({dev.get('sn', 'N/A')})")
 
-            # Updated choice prompt with exit option
             choice = input(f"\n{Colors.CYAN}{Colors.BOLD}Choice ([all], [0,2], [0-5], [b]ack, [e]xit):{Colors.END} ").strip().lower()
 
             if choice in ('e', 'exit'):
@@ -171,7 +169,8 @@ def main():
 
             task_id = exec_res['result'][0].get('data', {}).get('taskid')
             if task_id:
-                while True:[b]
+                # --- TASK MONITORING LOOP ---
+                while True:
                     status_res = requests.post(base_url, json={"id": 1, "session": session, "method": "get", "params": [{"url": f"/task/task/{task_id}"}]}, verify=False).json()
                     task_data = status_res['result'][0]['data']
                     percent = task_data.get('percent', 0)
