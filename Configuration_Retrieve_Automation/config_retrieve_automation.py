@@ -88,16 +88,17 @@ def main():
                 adom_res = requests.post(base_url, json={"id": 2, "session": session, "method": "get", "verbose": 1, "params": [{"url": "/dvmdb/adom", "fields": ["name", "restricted_prds"]}]}, verify=False).json()
                 raw_data = adom_res['result'][0].get('data', [])
 
-                prd_map = {1: "fos", 16: "fpx", 3: "foc", 5: "ffw", 6: "fwc"}
+                # Updated: Use string codes as per your environment
                 allowed_products = ["fos", "foc", "ffw", "fwc", "fpx"]
                 filtered_adoms = []
 
                 for a in raw_data:
+                    # Skip non-dict data and exclude rootp (Global ADOM)
                     if not isinstance(a, dict) or a.get('name') == 'rootp':
                         continue
-                    raw_prd = a.get('restricted_prds', 0)
-                    mapped_prd = prd_map.get(raw_prd, str(raw_prd).lower())
-                    if mapped_prd in allowed_products:
+
+                    product_code = str(a.get('restricted_prds', '')).lower()
+                    if product_code in allowed_products:
                         filtered_adoms.append(a['name'])
 
                 if not filtered_adoms:
@@ -113,7 +114,6 @@ def main():
                     try:
                         idx = input(f"\n{Colors.BOLD}Select ADOM Index (or 'e'xit):{Colors.END} ")
                         if idx.lower() in ('e', 'exit'):
-                            print(f"\n{Colors.BLUE}Exiting script...{Colors.END}")
                             sys.exit(0)
                         selected_adom = filtered_adoms[int(idx)]
                     except (ValueError, IndexError):
@@ -137,7 +137,6 @@ def main():
             choice = input(f"\n{Colors.CYAN}{Colors.BOLD}Choice ([all], [0,2], [0-5], [b]ack, [e]xit):{Colors.END} ").strip().lower()
 
             if choice in ('e', 'exit'):
-                print(f"\n{Colors.BLUE}Exiting script...{Colors.END}")
                 sys.exit(0)
 
             if choice == 'b':
@@ -145,7 +144,7 @@ def main():
                     selected_adom = None
                     clear_terminal()
                 else:
-                    print(f"\n{Colors.YELLOW}⚠ ADOMs are disabled. Cannot go back further.{Colors.END}")
+                    print(f"\n{Colors.YELLOW}⚠ ADOMs are disabled.{Colors.END}")
                     time.sleep(1)
                 continue
 
@@ -169,7 +168,6 @@ def main():
 
             task_id = exec_res['result'][0].get('data', {}).get('taskid')
             if task_id:
-                # --- TASK MONITORING LOOP ---
                 while True:
                     status_res = requests.post(base_url, json={"id": 1, "session": session, "method": "get", "params": [{"url": f"/task/task/{task_id}"}]}, verify=False).json()
                     task_data = status_res['result'][0]['data']
@@ -192,11 +190,7 @@ def main():
 
             action = input(f"Next Action: [1] Same ADOM [2] Change ADOM [3] Exit: ").strip()
             if action == "2":
-                if adom_enabled:
-                    selected_adom = None
-                else:
-                    print(f"\n{Colors.YELLOW}⚠ ADOMs are disabled. Remaining in 'root'.{Colors.END}")
-                    time.sleep(1)
+                selected_adom = None if adom_enabled else 'root'
             elif action != "1":
                 break
 
