@@ -642,14 +642,55 @@ class FMGClient:
     # ── queries ────────────────────────────────────────────────────────────────
 
     def get_adoms(self) -> list[str]:
-        """Return list of ADOM names (excluding 'root' if empty, keeping all)."""
-        resp = self._call("get", [{"url": "/dvmdb/adom", "fields": ["name"]}])
+        """
+        Return ADOM names that are relevant for firewall object extraction.
+
+        Only ADOMs whose restricted_prds includes at least one FortiOS-family
+        product are returned:
+            fos  — FortiOS (FortiGate)
+            foc  — FortiOS Carrier
+            ffw  — FortiFirewall
+            fwc  — FortiFirewall Carrier
+            fpx  — FortiProxy
+
+        ADOMs for FortiAnalyzer, FortiMail, FortiSandbox, etc. are excluded
+        because they do not carry firewall/address, service, VIP, etc. objects.
+        rootp (Global Policy ADOM) is always included when present.
+        """
+        FORTIOS_PRDS = {"fos", "foc", "ffw", "fwc", "fpx"}
+
+        resp = self._call("get", [{
+            "url": "/dvmdb/adom",
+            "fields": ["name", "restricted_prds"],
+        }])
         result = resp.get("result", [{}])
         status = result[0].get("status", {})
         if status.get("code", -1) != 0:
             raise RuntimeError(f"Failed to list ADOMs: {status.get('message')}")
         data = result[0].get("data", [])
-        return [a["name"] for a in data if "name" in a]
+
+        filtered = []
+        for a in data:
+            name = a.get("name")
+            if not name:
+                continue
+            # rootp (Global) is always relevant
+            if name == "rootp":
+                filtered.append(name)
+                continue
+            # restricted_prds may be a list of strings or a bitmask int
+            # depending on FMG version — handle both
+            prds = a.get("restricted_prds", [])
+            if isinstance(prds, int):
+                # bitmask: fos=0x0001, ffw=0x0008, fwc=0x0010, foc=0x0020, fpx=0x0200
+                BITMASK = {0x0001: "fos", 0x0008: "ffw", 0x0010: "fwc",
+                           0x0020: "foc", 0x0200: "fpx"}
+                prds = [v for k, v in BITMASK.items() if prds & k]
+            if not prds or set(prds) & FORTIOS_PRDS:
+                # empty restricted_prds means "all products" — include it
+                filtered.append(name)
+
+        return filtered
 
     def get_table(self, url: str) -> tuple[list, int]:
         """
@@ -916,51 +957,70 @@ def display_name(adom: str) -> str:
 def select_adoms(client: FMGClient, adom_filter: str | None,
                  adom_enabled: bool) -> list[str]:
     """
-    If ADOMs are disabled on this FMG, skip the picker and return ['root'].
-    Otherwise present a numbered list for single / multi / all selection.
-    'rootp' is shown as 'Global' in the UI but its real name is kept internally.
+    Always presents a numbered picker so the user confirms their selection.
+    - When ADOMs are disabled, the list contains only ['root'].
+    - 'rootp' is shown as 'Global (Global Policy)' but kept as 'rootp' internally.
+    - Only FortiOS-family ADOMs are listed (filtered in get_adoms).
     """
-    if not adom_enabled:
-        print(f"  {dim('ADOMs disabled — targeting')} {cyan('root')}")
-        return ["root"]
-
     print(f"  {dim('Fetching ADOM list...')}", end=" ", flush=True)
-    all_adoms = client.get_adoms()
+
+    if adom_enabled:
+        all_adoms = client.get_adoms()
+    else:
+        # ADOMs disabled — only root exists
+        all_adoms = ["root"]
+
+    # Ensure root is always in the list (sometimes not returned by API)
+    if "root" not in all_adoms and adom_enabled:
+        all_adoms = ["root"] + all_adoms
+
     print(green(f"{len(all_adoms)} found"))
 
+    if not adom_enabled:
+        print(f"  {dim('Admin Domain Configuration: Disabled')}")
+
+    # --adom CLI flag: validate and return immediately without showing picker
     if adom_filter:
         if adom_filter not in all_adoms:
             print(red(f"  ADOM '{adom_filter}' not found on this FortiManager."))
-            print(f"  Available ADOMs: {', '.join(display_name(a) for a in all_adoms)}")
+            print(f"  Available: {', '.join(display_name(a) for a in all_adoms)}")
             sys.exit(1)
         print(f"  Selected: {cyan(display_name(adom_filter))}")
         return [adom_filter]
 
-    if len(all_adoms) == 1:
-        print(f"  Selected: {cyan(display_name(all_adoms[0]))}")
-        return all_adoms
-
-    # Print numbered list
+    # Always show the picker — never auto-select
+    # Derive column widths from actual data so nothing is ever clipped or over-padded.
+    labels   = [display_name(n) for n in all_adoms]
+    notes    = ["Global Policy"  if n == "rootp"      else
+                "ADOMs disabled" if not adom_enabled  else ""
+                for n in all_adoms]
+    col_idx  = max(len(str(len(all_adoms))), 1)
+    col_name = max(len("ADOM Name"), max(len(l) for l in labels))
+    col_note = max((len(nt) for nt in notes if nt), default=0)
+    col_note = max(len("Note"), col_note)
+    sep      = "  "
+    divider  = "─" * (col_idx + len(sep) + col_name + len(sep) + col_note)
     print()
-    print(f"  {'#':<5} {'ADOM Name'}")
-    print("  " + "─" * 42)
-    for i, name in enumerate(all_adoms, 1):
-        label = display_name(name)
-        suffix = dim("  (Global Policy)") if name == "rootp" else ""
-        print(f"  {cyan(str(i)):<14} {label}{suffix}")
+    print(f"  {'#':<{col_idx}}{sep}{'ADOM Name':<{col_name}}{sep}Note")
+    print("  " + divider)
+    for i, (name, label, note) in enumerate(zip(all_adoms, labels, notes), 1):
+        idx_col  = cyan(str(i).ljust(col_idx))
+        name_col = label.ljust(col_name)
+        note_col = dim(note) if note else ""
+        print(f"  {idx_col}{sep}{name_col}{sep}{note_col}")
     print()
     print(f"  Enter numbers or names  (e.g. {dim('1,3')} or {dim('root,FortiFirewall')})")
-    print(f"  Press {dim('Enter')} or type {dim('all')} to select all ADOMs.")
+    print(f"  Press {dim('Enter')} or type {dim('all')} to select all.")
     print()
 
     while True:
         raw = input("  Selection > ").strip()
 
         if raw == "" or raw.lower() == "all":
-            print(f"  Selected: {cyan('all ' + str(len(all_adoms)) + ' ADOMs')}")
+            print(f"  Selected: {cyan('all ' + str(len(all_adoms)) + ' ADOM(s)')}")
             return all_adoms
 
-        # Parse: numbers, display names, or real names
+        # Parse tokens: numbers, display names, or real names
         selected = []
         invalid = []
         for token in (t.strip() for t in raw.split(",") if t.strip()):
@@ -970,7 +1030,7 @@ def select_adoms(client: FMGClient, adom_filter: str | None,
                     selected.append(all_adoms[idx])
                 else:
                     invalid.append(token)
-            elif token in all_adoms:                     # real name
+            elif token in all_adoms:                              # real name match
                 selected.append(token)
             elif token.lower() == "global" and "rootp" in all_adoms:  # friendly alias
                 selected.append("rootp")
@@ -1097,15 +1157,10 @@ def main() -> None:
             print(f"  {dim('Admin Domain Configuration:' )} {yellow('Disabled')}")
 
         # ── main loop — repeat until user quits ───────────────────────────────
-        # When ADOMs are disabled there is only one target (root), so the
-        # "run again" prompt is hidden — there is nothing else to pick.
         while True:
             print()
             print(bold("  " + "─" * 48))
             run_once(client, tables, args, adom_enabled)
-
-            if not adom_enabled:
-                break  # nothing else to select; exit loop automatically
 
             print("  " + "─" * 48)
             again = input(f"  Run again for a different ADOM? [{green('Y')}/n]: ").strip().lower()
