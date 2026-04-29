@@ -690,11 +690,18 @@ class FMGClient:
 
         return all_entries, 0
 
-    def get_fm_version(self) -> str:
+    def get_sys_status(self) -> tuple[str, bool]:
+        """
+        Returns (version_string, adom_enabled).
+        adom_enabled is False when 'Admin Domain Configuration' == 'Disabled'.
+        """
         resp = self._call("get", [{"url": "/sys/status"}])
         result = resp.get("result", [{}])
         data = result[0].get("data", {})
-        return data.get("Version", "unknown")
+        version = data.get("Version", "unknown")
+        adom_cfg = data.get("Admin Domain Configuration", "Enabled")
+        adom_enabled = adom_cfg.strip().lower() != "disabled"
+        return version, adom_enabled
 
 
 # ── progress printer ───────────────────────────────────────────────────────────
@@ -743,14 +750,25 @@ class Progress:
 
 # ── core extraction ────────────────────────────────────────────────────────────
 
+def build_url(tbl: dict, adom: str) -> str:
+    """
+    Build the API URL for a given table and ADOM.
+    'rootp' (Global Policy ADOM) uses /pm/config/global/obj/ instead of
+    /pm/config/adom/rootp/obj/ — this matches what FortiManager itself sends.
+    """
+    if adom == "rootp":
+        return tbl["url"].replace("/pm/config/adom/{adom}/obj/", "/pm/config/global/obj/")
+    return tbl["url"].format(adom=adom)
+
+
 def extract_adom(client: FMGClient, adom: str, tables: list[dict],
                  progress: Progress) -> dict:
     """Fetch all tables for one ADOM. Returns {table_name: [entries]}."""
     result = {}
     for tbl in tables:
-        url = tbl["url"].format(adom=adom)
+        url = build_url(tbl, adom)
         entries, code = client.get_table(url)
-        progress.tick(f"[{adom}] {tbl['name']}", len(entries), code)
+        progress.tick(f"[{display_name(adom)}] {tbl['name']}", len(entries), code)
         if code == 0:
             result[tbl["name"]] = entries
     return result
@@ -793,7 +811,7 @@ def write_json_per_adom(data: dict, out_stem: str, no_csv: bool) -> None:
     """Write one JSON (and optionally one CSV) file per ADOM."""
     import csv
     for adom, tables in data["data"].items():
-        safe = _sanitize_filename(adom)
+        safe = _sanitize_filename(display_name(adom))
 
         # ── per-ADOM payload ──────────────────────────────────────────────────
         adom_payload = {
@@ -837,9 +855,10 @@ def write_summary(data: dict) -> None:
     print(f"\n  {'ADOM':<20} {'Table':<45} {'Count':>6}")
     print("  " + "─" * 75)
     for adom, tables in data["data"].items():
+        label = display_name(adom)
         for tbl, entries in sorted(tables.items()):
             if entries:
-                print(f"  {adom:<20} {tbl:<45} {green(str(len(entries))):>6}")
+                print(f"  {label:<20} {tbl:<45} {green(str(len(entries))):>6}")
     print()
 
 
@@ -889,30 +908,48 @@ def select_tables(category_filter: str | None) -> list[dict]:
     return ADOM_TABLES
 
 
-def select_adoms(client: FMGClient, adom_filter: str | None) -> list[str]:
-    print(f"  {dim('Fetching ADOM list...')} ", end="", flush=True)
+def display_name(adom: str) -> str:
+    """Map internal ADOM names to user-friendly display names."""
+    return "Global" if adom == "rootp" else adom
+
+
+def select_adoms(client: FMGClient, adom_filter: str | None,
+                 adom_enabled: bool) -> list[str]:
+    """
+    If ADOMs are disabled on this FMG, skip the picker and return ['root'].
+    Otherwise present a numbered list for single / multi / all selection.
+    'rootp' is shown as 'Global' in the UI but its real name is kept internally.
+    """
+    if not adom_enabled:
+        print(f"  {dim('ADOMs disabled — targeting')} {cyan('root')}")
+        return ["root"]
+
+    print(f"  {dim('Fetching ADOM list...')}", end=" ", flush=True)
     all_adoms = client.get_adoms()
     print(green(f"{len(all_adoms)} found"))
 
     if adom_filter:
         if adom_filter not in all_adoms:
             print(red(f"  ADOM '{adom_filter}' not found on this FortiManager."))
-            print(f"  Available ADOMs: {', '.join(all_adoms)}")
+            print(f"  Available ADOMs: {', '.join(display_name(a) for a in all_adoms)}")
             sys.exit(1)
+        print(f"  Selected: {cyan(display_name(adom_filter))}")
         return [adom_filter]
 
     if len(all_adoms) == 1:
-        print(f"  Selected: {cyan(all_adoms[0])}")
+        print(f"  Selected: {cyan(display_name(all_adoms[0]))}")
         return all_adoms
 
     # Print numbered list
     print()
-    print(f"  {'#':<4} {'ADOM Name'}")
-    print("  " + "─" * 40)
+    print(f"  {'#':<5} {'ADOM Name'}")
+    print("  " + "─" * 42)
     for i, name in enumerate(all_adoms, 1):
-        print(f"  {cyan(str(i)):<14} {name}")
+        label = display_name(name)
+        suffix = dim("  (Global Policy)") if name == "rootp" else ""
+        print(f"  {cyan(str(i)):<14} {label}{suffix}")
     print()
-    print(f"  Enter numbers, names, ranges (e.g. {dim('1,3,5')} or {dim('root,FortiFirewall')})")
+    print(f"  Enter numbers or names  (e.g. {dim('1,3')} or {dim('root,FortiFirewall')})")
     print(f"  Press {dim('Enter')} or type {dim('all')} to select all ADOMs.")
     print()
 
@@ -923,38 +960,34 @@ def select_adoms(client: FMGClient, adom_filter: str | None) -> list[str]:
             print(f"  Selected: {cyan('all ' + str(len(all_adoms)) + ' ADOMs')}")
             return all_adoms
 
-        # Parse: could be numbers, names, or mix
+        # Parse: numbers, display names, or real names
         selected = []
         invalid = []
-        for token in raw.split(","):
-            token = token.strip()
-            if not token:
-                continue
-            # Try as index number
+        for token in (t.strip() for t in raw.split(",") if t.strip()):
             if token.isdigit():
                 idx = int(token) - 1
                 if 0 <= idx < len(all_adoms):
                     selected.append(all_adoms[idx])
                 else:
                     invalid.append(token)
-            # Try as ADOM name
-            elif token in all_adoms:
+            elif token in all_adoms:                     # real name
                 selected.append(token)
+            elif token.lower() == "global" and "rootp" in all_adoms:  # friendly alias
+                selected.append("rootp")
             else:
                 invalid.append(token)
 
         if invalid:
             print(red(f"  Unknown selection(s): {', '.join(invalid)} — try again."))
             continue
-
         if not selected:
             print(red("  Nothing selected — try again."))
             continue
 
         # Deduplicate while preserving order
-        seen = set()
+        seen: set = set()
         selected = [x for x in selected if not (x in seen or seen.add(x))]
-        print(f"  Selected: {cyan(', '.join(selected))}")
+        print(f"  Selected: {cyan(', '.join(display_name(a) for a in selected))}")
         return selected
 
 
@@ -991,11 +1024,12 @@ Examples:
     return p.parse_args()
 
 
-def run_once(client: FMGClient, tables: list[dict], args: argparse.Namespace) -> None:
+def run_once(client: FMGClient, tables: list[dict], args: argparse.Namespace,
+             adom_enabled: bool) -> None:
     """Perform one full ADOM selection → extract → save cycle."""
 
     # ── ADOM selection ────────────────────────────────────────────────────────
-    adoms = select_adoms(client, args.adom)
+    adoms = select_adoms(client, args.adom, adom_enabled)
 
     # ── extract ───────────────────────────────────────────────────────────────
     result = run_extraction(client, adoms, tables)
@@ -1057,14 +1091,21 @@ def main() -> None:
     print(green("  connected"))
 
     try:
-        version = client.get_fm_version()
+        version, adom_enabled = client.get_sys_status()
         print(f"  FortiManager version: {cyan(version)}")
+        if not adom_enabled:
+            print(f"  {dim('Admin Domain Configuration:' )} {yellow('Disabled')}")
 
         # ── main loop — repeat until user quits ───────────────────────────────
+        # When ADOMs are disabled there is only one target (root), so the
+        # "run again" prompt is hidden — there is nothing else to pick.
         while True:
             print()
             print(bold("  " + "─" * 48))
-            run_once(client, tables, args)
+            run_once(client, tables, args, adom_enabled)
+
+            if not adom_enabled:
+                break  # nothing else to select; exit loop automatically
 
             print("  " + "─" * 48)
             again = input(f"  Run again for a different ADOM? [{green('Y')}/n]: ").strip().lower()
