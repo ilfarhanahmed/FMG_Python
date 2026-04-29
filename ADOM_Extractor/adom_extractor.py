@@ -932,7 +932,7 @@ def print_banner() -> None:
     print()
     print(bold("  ╔══════════════════════════════════════════════════╗"))
     print(bold("  ║   FortiManager ADOM Object Extractor v1.0        ║"))
-    print(bold("  ║   FM 7.6.6 · 228 object types · JSON-RPC API     ║"))
+    print(bold("  ║   FMG 7.6.6 · 228 object types · JSON-RPC API    ║"))
     print(bold("  ╚══════════════════════════════════════════════════╝"))
     print()
 
