@@ -655,6 +655,9 @@ class FMGClient:
         """
         Fetch all entries from a table URL (paginates automatically).
         Returns (entries, status_code).
+
+        loadsub is intentionally omitted (defaults to 1) so that
+        sub-objects such as dynamic_mapping are included in the response.
         """
         all_entries = []
         offset = 0
@@ -664,7 +667,6 @@ class FMGClient:
             resp = self._call("get", [{
                 "url": url,
                 "range": [offset, page_size],
-                "loadsub": 0,
             }])
             result = resp.get("result", [{}])
             status = result[0].get("status", {})
@@ -782,32 +784,52 @@ def run_extraction(client: FMGClient, adoms: list[str],
 
 # ── output writers ─────────────────────────────────────────────────────────────
 
-def write_json(data: dict, path: str) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, default=str)
-    size_kb = os.path.getsize(path) / 1024
-    print(f"  {green('✓')} JSON  → {bold(path)}  ({size_kb:.0f} KB)")
+def _sanitize_filename(name: str) -> str:
+    """Replace characters that are unsafe in filenames."""
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in name)
 
 
-def write_csv(data: dict, path: str) -> None:
+def write_json_per_adom(data: dict, out_stem: str, no_csv: bool) -> None:
+    """Write one JSON (and optionally one CSV) file per ADOM."""
     import csv
-    rows = []
     for adom, tables in data["data"].items():
-        for table_name, entries in tables.items():
-            for entry in entries:
-                rows.append({
-                    "adom": adom,
-                    "table": table_name,
-                    "name": entry.get("name", entry.get("id", "")),
-                    "data": json.dumps(entry, default=str),
-                })
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["adom", "table", "name", "data"])
-        writer.writeheader()
-        writer.writerows(rows)
-    size_kb = os.path.getsize(path) / 1024
-    print(f"  {green('✓')} CSV   → {bold(path)}  ({size_kb:.0f} KB)  "
-          f"({len(rows)} rows)")
+        safe = _sanitize_filename(adom)
+
+        # ── per-ADOM payload ──────────────────────────────────────────────────
+        adom_payload = {
+            "metadata": {
+                **{k: v for k, v in data["metadata"].items() if k != "adoms"},
+                "adom": adom,
+            },
+            "data": {adom: tables},
+        }
+
+        # JSON
+        json_path = f"{out_stem}_{safe}.json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(adom_payload, f, indent=2, default=str)
+        size_kb = os.path.getsize(json_path) / 1024
+        print(f"  {green('✓')} JSON  → {bold(json_path)}  ({size_kb:.0f} KB)")
+
+        # CSV
+        if not no_csv:
+            rows = []
+            for table_name, entries in tables.items():
+                for entry in entries:
+                    rows.append({
+                        "adom": adom,
+                        "table": table_name,
+                        "name": entry.get("name", entry.get("id", "")),
+                        "data": json.dumps(entry, default=str),
+                    })
+            csv_path = f"{out_stem}_{safe}.csv"
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["adom", "table", "name", "data"])
+                writer.writeheader()
+                writer.writerows(rows)
+            size_kb = os.path.getsize(csv_path) / 1024
+            print(f"  {green('✓')} CSV   → {bold(csv_path)}  ({size_kb:.0f} KB)  "
+                  f"({len(rows)} rows)")
 
 
 def write_summary(data: dict) -> None:
@@ -879,23 +901,61 @@ def select_adoms(client: FMGClient, adom_filter: str | None) -> list[str]:
             sys.exit(1)
         return [adom_filter]
 
-    # Interactive multi-select when more than 1 ADOM
     if len(all_adoms) == 1:
+        print(f"  Selected: {cyan(all_adoms[0])}")
         return all_adoms
 
-    print(f"\n  ADOMs: {cyan(', '.join(all_adoms))}")
-    choice = input("  Extract all ADOMs? [Y/n]: ").strip().lower()
-    if choice in ("", "y", "yes"):
-        return all_adoms
+    # Print numbered list
+    print()
+    print(f"  {'#':<4} {'ADOM Name'}")
+    print("  " + "─" * 40)
+    for i, name in enumerate(all_adoms, 1):
+        print(f"  {cyan(str(i)):<14} {name}")
+    print()
+    print(f"  Enter numbers, names, ranges (e.g. {dim('1,3,5')} or {dim('root,FortiFirewall')})")
+    print(f"  Press {dim('Enter')} or type {dim('all')} to select all ADOMs.")
+    print()
 
-    print("  Enter ADOM name(s) separated by commas:")
-    raw = input("  > ").strip()
-    selected = [a.strip() for a in raw.split(",") if a.strip()]
-    invalid = [a for a in selected if a not in all_adoms]
-    if invalid:
-        print(red(f"  Unknown ADOM(s): {', '.join(invalid)}"))
-        sys.exit(1)
-    return selected
+    while True:
+        raw = input("  Selection > ").strip()
+
+        if raw == "" or raw.lower() == "all":
+            print(f"  Selected: {cyan('all ' + str(len(all_adoms)) + ' ADOMs')}")
+            return all_adoms
+
+        # Parse: could be numbers, names, or mix
+        selected = []
+        invalid = []
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            # Try as index number
+            if token.isdigit():
+                idx = int(token) - 1
+                if 0 <= idx < len(all_adoms):
+                    selected.append(all_adoms[idx])
+                else:
+                    invalid.append(token)
+            # Try as ADOM name
+            elif token in all_adoms:
+                selected.append(token)
+            else:
+                invalid.append(token)
+
+        if invalid:
+            print(red(f"  Unknown selection(s): {', '.join(invalid)} — try again."))
+            continue
+
+        if not selected:
+            print(red("  Nothing selected — try again."))
+            continue
+
+        # Deduplicate while preserving order
+        seen = set()
+        selected = [x for x in selected if not (x in seen or seen.add(x))]
+        print(f"  Selected: {cyan(', '.join(selected))}")
+        return selected
 
 
 # ── main ───────────────────────────────────────────────────────────────────────
@@ -929,6 +989,28 @@ Examples:
     p.add_argument("--list-categories", action="store_true",
                    help="Print all available categories and exit")
     return p.parse_args()
+
+
+def run_once(client: FMGClient, tables: list[dict], args: argparse.Namespace) -> None:
+    """Perform one full ADOM selection → extract → save cycle."""
+
+    # ── ADOM selection ────────────────────────────────────────────────────────
+    adoms = select_adoms(client, args.adom)
+
+    # ── extract ───────────────────────────────────────────────────────────────
+    result = run_extraction(client, adoms, tables)
+
+    # ── write output — one file per ADOM ─────────────────────────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_stem = args.out.rstrip(".json") if args.out else f"fmg_adom_objects_{timestamp}"
+
+    print(f"\n  {bold('Saving output...')}")
+    write_json_per_adom(result, out_stem, no_csv=args.no_csv)
+
+    if not args.no_summary:
+        write_summary(result)
+
+    print(green("  Done.\n"))
 
 
 def main() -> None:
@@ -978,29 +1060,22 @@ def main() -> None:
         version = client.get_fm_version()
         print(f"  FortiManager version: {cyan(version)}")
 
-        # ── ADOM selection ─────────────────────────────────────────────────────
-        adoms = select_adoms(client, args.adom)
+        # ── main loop — repeat until user quits ───────────────────────────────
+        while True:
+            print()
+            print(bold("  " + "─" * 48))
+            run_once(client, tables, args)
 
-        # ── extract ────────────────────────────────────────────────────────────
-        result = run_extraction(client, adoms, tables)
+            print("  " + "─" * 48)
+            again = input(f"  Run again for a different ADOM? [{green('Y')}/n]: ").strip().lower()
+            if again in ("n", "no", "q", "quit", "exit"):
+                break
 
     finally:
         client.logout()
         print(f"  {dim('Session closed.')}")
 
-    # ── write output ───────────────────────────────────────────────────────────
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_stem = args.out.rstrip(".json") if args.out else f"fmg_adom_objects_{timestamp}"
-
-    print(f"\n  {bold('Saving output...')}")
-    write_json(result, out_stem + ".json")
-    if not args.no_csv:
-        write_csv(result, out_stem + ".csv")
-
-    if not args.no_summary:
-        write_summary(result)
-
-    print(green("  Done.\n"))
+    print(green("  Goodbye.\n"))
 
 
 if __name__ == "__main__":
