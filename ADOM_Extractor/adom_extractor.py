@@ -3,6 +3,12 @@
 FortiManager ADOM Object Extractor
 Connects to a FortiManager via JSON-RPC API and extracts all ADOM-level objects
 across every ADOM, based on the 228 root-level table endpoints from FMG 7.6.6.
+
+Usage:
+    python3 fmg_adom_extractor.py
+    python3 fmg_adom_extractor.py --adom root        # single ADOM
+    python3 fmg_adom_extractor.py --category firewall # single category
+    python3 fmg_adom_extractor.py --out results.json  # custom output file
 """
 
 import argparse
